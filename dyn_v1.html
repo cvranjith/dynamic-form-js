@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Dynamic Form Generation</title>
+  <style>
+    fieldset {
+      border: 1px solid black;
+      margin: 10px;
+      padding: 10px;
+    }
+
+    .list-container {
+      margin-bottom: 10px;
+    }
+
+    .list-item {
+      margin-bottom: 5px;
+      border: 1px solid black;
+      padding: 10px;
+    }
+  </style>
+</head>
+
+<body>
+    <button id="saveButton" type="button">Save</button>
+  <script>
+    var meta = JSON.parse(`[
+  {
+    "name": "endPointName",
+    "class": "java.lang.String",
+    "mandatory": true
+  },
+  {
+    "name": "transport",
+    "class": "java.lang.String",
+    "mandatory": true,
+    "lov": ["AQ", "FILE", "HTTP"]
+  },
+  {
+    "name": "authCredialName",
+    "class": "java.lang.String"
+  },
+  {
+    "name": "targetEndPoint",
+    "class": "java.lang.String"
+  },
+  {
+    "name": "headers",
+    "class": "java.util.List",
+    "obj": [
+      {
+        "name": "headerName",
+        "class": "java.lang.String"
+      },
+      {
+        "name": "headerVal",
+        "class": "java.lang.String"
+      }
+    ]
+  },
+  {
+    "name": "payloadIdentifier",
+    "class": "models.ElementString",
+    "obj": [
+      {
+        "name": "identifierName",
+        "class": "java.lang.String"
+      },
+      {
+        "name": "identifierVal",
+        "class": "java.lang.String"
+      }
+    ]
+  },
+  {
+    "name": "oracleEndpoint",
+    "class": "models.OracleEndpoint",
+    "obj": [
+      {
+        "name": "serverName",
+        "class": "java.lang.String"
+      },
+      {
+        "name": "ports",
+        "class": "java.util.List",
+        "obj": [
+          {
+            "name": "portName",
+            "class": "java.lang.String"
+          },
+          {
+            "name": "tnsName",
+            "class": "java.lang.String"
+          }
+        ]
+      }
+    ]
+  }
+]`);
+
+    function generateForm(metaData, parentElement) {
+      var form = document.createElement('form');
+
+      metaData.forEach(function (field) {
+        var label = document.createElement('label');
+        label.textContent = field.name;
+
+        if (field.class === 'java.util.List') {
+          var addButton = document.createElement('button');
+          addButton.textContent = '+';
+          addButton.type = 'button';
+
+          var listContainer = document.createElement('div');
+          listContainer.className = 'list-container';
+
+          addButton.addEventListener('click', function () {
+            var subObject = {};
+            field.obj.forEach(function (subField) {
+              subObject[subField.name] = '';
+            });
+            generateForm(field.obj, createListItem(listContainer, subObject));
+          });
+
+          listContainer.appendChild(addButton);
+          form.appendChild(label);
+          form.appendChild(listContainer);
+        } else if (field.obj) {
+          var fieldset = document.createElement('fieldset');
+
+          label.style.display = 'block';
+          fieldset.style.border = '1px solid black';
+          fieldset.style.margin = '10px';
+          fieldset.style.padding = '10px';
+          fieldset.appendChild(label);
+          generateForm(field.obj, fieldset);
+          form.appendChild(fieldset);
+        } else {
+          var input = document.createElement('input');
+          input.type = 'text';
+          input.name = field.name;
+          label.appendChild(input);
+          form.appendChild(label);
+
+          // Insert <br> element after each text input
+          form.appendChild(document.createElement('br'));
+        }
+      });
+
+      parentElement.appendChild(form);
+    }
+
+    function createListItem(container, data) {
+      var listItem = document.createElement('div');
+      listItem.className = 'list-item';
+
+      var deleteButton = document.createElement('button');
+      deleteButton.textContent = '-';
+      deleteButton.type = 'button';
+
+      deleteButton.addEventListener('click', function () {
+        listItem.remove();
+      });
+
+      listItem.appendChild(deleteButton);
+      container.appendChild(listItem);
+
+      return listItem;
+    }
+
+    var saveButton = document.getElementById('saveButton');
+saveButton.addEventListener('click', function () {
+  var formData = {};
+  traverseForm(document.body, formData);
+  var jsonData = JSON.stringify(formData);
+  console.log(jsonData);
+});
+
+function traverseForm(element, formData) {
+  var inputs = element.querySelectorAll('input[name]');
+  for (var i = 0; i < inputs.length; i++) {
+    var input = inputs[i];
+    formData[input.name] = input.value;
+  }
+
+  var fieldsets = element.querySelectorAll('fieldset');
+  for (var j = 0; j < fieldsets.length; j++) {
+    var fieldset = fieldsets[j];
+    var fieldsetName = fieldset.querySelector('label').textContent;
+    formData[fieldsetName] = {};
+    traverseForm(fieldset, formData[fieldsetName]);
+  }
+
+  var listContainers = element.querySelectorAll('.list-container');
+  for (var k = 0; k < listContainers.length; k++) {
+    var listContainer = listContainers[k];
+    var listItems = listContainer.querySelectorAll('.list-item');
+    formData[listContainer.previousSibling.textContent] = [];
+    for (var l = 0; l < listItems.length; l++) {
+      var listItem = listItems[l];
+      var listItemData = {};
+      traverseForm(listItem, listItemData);
+      formData[listContainer.previousSibling.textContent].push(listItemData);
+    }
+  }
+}
+
+
+    generateForm(meta, document.body);
+  </script>
+
+</body>
+
+</html>

@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    .box {
+      display: inline-block;
+      width: 100px;
+      height: 100px;
+      background-color: #f2f2f2;
+      margin: 5px;
+      padding: 10px;
+      text-align: center;
+      border-radius: 10px;
+      box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+      cursor: pointer;
+      position: relative; /* Added */
+      transition: transform 0.3s;
+    }
+    .box:hover {
+      transform: scale(1.05);
+    }
+    
+    .box img {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 10px;
+    }
+
+    .box .delete-button {
+      position: absolute;
+      top: 5px;
+      right: 5px;
+      font-weight: bold;
+      color: red;
+      cursor: pointer;
+    }
+
+    #chartContainer {
+      text-align: center;
+    }
+
+    #modal {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 400px;
+      background-color: #fff;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+      z-index: 9999;
+      transition: transform 0.3s, opacity 0.3s;
+      top: 20%;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .modal-header {
+      padding: 10px;
+      background-color: #f2f2f2;
+      border-radius: 10px 10px 0 0;
+      cursor: move;
+    }
+
+    .modal-content {
+      padding: 20px;
+    }
+
+    .modal-close {
+      float: right;
+      cursor: pointer;
+    }
+
+    #modalBody label {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      margin-bottom: 10px;
+      width: 100%;
+      text-align: left;
+      /*padding-right: 10px;*/
+    }
+    #modalBody label span {
+        flex-shrink: 0;
+        /*width: 100px; /* Adjust the width as needed */
+    }
+    #modalBody input[type="text"] {
+      width: 100%;
+      padding: 5px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+      /*margin-left: 100px;*/
+    }
+
+    .box.dragging {
+      opacity: 0.5;
+    }
+
+    .box.drop-zone {
+      border: 2px dashed #aaa;
+    }
+  </style>
+</head>
+<body>
+  <button id="printEndpointsButton">Print Endpoints</button>
+  <div id="chartContainer"></div>
+
+  <div id="modal">
+    <div class="modal-header" id="modalHeader">
+      <span class="modal-close">&#10006;</span>
+    </div>
+    <div class="modal-content">
+      <h2 id="modalTitle"></h2>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+  <script>
+    var endpointData = `transports:
+  endPoints:
+    - endPointName: dbProcEP
+      transport: oracle
+      authCredialName: db_cred
+      oracleEndPoint:
+        statement: begin :output := fn_process(:input,:headers,:outputheaders); end;
+      msgCodeIdentifier:
+        identifier: header
+        identifierTag: msgCode
+    - endPointName: jmsQueue
+      transport: jms
+      jmsEndPoint:
+        queueName: jms/TestJMSQueue1
+    - endPointName: mqPutEP
+      transport: mq
+      mqEndPoint:
+        queueName: queue:///DEV.QUEUE.1
+      authCredialName: ibmmq_cred`;
+
+    var endPoint_meta=`[{"name":"endPointName","class":"java.lang.String","mandatory":true},{"name":"transport","class":"java.lang.String","mandatory":true,"lov":["AQ","FILE","HTTP","JMS","JOB","KAFKA","MQ","ORACLE","SCANDIR","SHELL"]},{"name":"authCredialName","class":"java.lang.String"},{"name":"targetEndPoint","class":"java.lang.String"},{"name":"headers","class":"java.util.List","listClass":"oracle.fsgbu.models.HeaderFormParam"},{"name":"payloadIdentifier","class":"oracle.fsgbu.models.ElementString"},{"name":"msgCodeIdentifier","class":"oracle.fsgbu.models.ElementString"}]`;
+    var mq_meta=`[{"name":"queueName","class":"java.lang.String","mandatory":true}]`;
+    var jms_meta=`[{"name":"queueName","class":"java.lang.String","mandatory":true},{"name":"queueConnectionFactory","class":"java.lang.String","mandatory":true}]`;
+    var oracle_meta=`[{"name":"statement","class":"java.lang.String","mandatory":true,"defaultValue":"begin my_pkg.my_proc(p_input=>:input, p_in_headers=> :headers, p_output=>:output, p_out_headers=>:outputheaders); end;"}]`;
+
+    var endpointData;
+
+    var boxesPerRow = 3;
+
+    function generateChartBoxes(data, boxesPerRow) {
+      var chartContainer = document.getElementById('chartContainer');
+      chartContainer.innerHTML = '';
+
+      var parsedData = jsyaml.load(data);
+      endpointData = parsedData.transports.endPoints;
+
+      for (var i = 0; i < endpointData.length; i++) {
+        var endpoint = endpointData[i];
+
+        var box = document.createElement('div');
+        box.className = 'box';
+        box.draggable = true;
+        box.addEventListener('click', function(endpoint) {
+          return function() {
+            showModal(endpoint);
+          };
+        }(endpoint));
+
+        var transportIcon = document.createElement('img');
+        transportIcon.src = endpoint.transport + '.png';
+        box.appendChild(transportIcon);
+
+        var modalEndpointName = document.createElement('div');
+        modalEndpointName.textContent = endpoint.endPointName;
+        box.appendChild(modalEndpointName);
+
+        var modalTransport = document.createElement('div');
+        modalTransport.textContent = endpoint.transport;
+        box.appendChild(modalTransport);
+
+        var deleteButton = document.createElement('div');
+        deleteButton.className = 'delete-button';
+        deleteButton.innerHTML = '&#10006;';
+        deleteButton.addEventListener('click', function(event) {
+          event.stopPropagation();
+          var box = event.target.closest('.box');
+          if (box && box.parentNode) {
+            box.parentNode.removeChild(box);
+          }
+        });
+        box.appendChild(deleteButton);
+
+        chartContainer.appendChild(box);
+
+        if ((i + 1) % boxesPerRow === 0) {
+          chartContainer.appendChild(document.createElement('br'));
+        }
+      }
+    }
+
+    generateChartBoxes(endpointData, boxesPerRow);
+
+    var modal = document.getElementById('modal');
+    var modalClose = document.getElementsByClassName('modal-close')[0];
+    var modalHeader = document.getElementById('modalHeader');
+    var modalContent = document.querySelector('.modal-content');
+    var modalTitle = document.getElementById('modalTitle');
+    var modalBody = document.getElementById('modalBody');
+    chartContainer.addEventListener('dragstart', handleDragStart);
+    chartContainer.addEventListener('dragover', handleDragOver);
+    chartContainer.addEventListener('dragenter', handleDragEnter);
+    chartContainer.addEventListener('dragleave', handleDragLeave);
+    chartContainer.addEventListener('drop', handleDrop);
+    chartContainer.addEventListener('dragend', handleDragEnd);
+
+    document.getElementById('printEndpointsButton').addEventListener('click', function() {
+  var boxes = Array.from(document.getElementsByClassName('box'));
+  var endpoints = [];
+
+  boxes.forEach(function(box) {
+    showModal(box);
+    var endpoint = {
+      endPointName: box.querySelector('div').textContent,
+      transport: box.querySelector('div:nth-of-type(2)').textContent,
+      properties: {}
+    };
+
+    var properties = Array.from(modalBody.getElementsByTagName('input'));
+    properties.forEach(function(property) {
+      var propertyName = property.parentElement.textContent.replace(':', '');
+      endpoint.properties[propertyName] = property.value;
+    });
+
+    endpoints.push(endpoint);
+    modal.style.display = 'none';
+  });
+
+  console.log(endpoints.map(function(endpoint) {
+    return endpoint.properties;
+  }));
+});
+
+
+
+    function handleDragStart(event) {
+      event.target.classList.add('dragging');
+    }
+
+    function handleDragOver(event) {
+      event.preventDefault();
+    }
+
+    function handleDragEnter(event) {
+      event.target.classList.add('drop-zone');
+    }
+
+    function handleDragLeave(event) {
+      event.target.classList.remove('drop-zone');
+    }
+
+    function handleDrop(event) {
+      event.preventDefault();
+
+      var draggingBox = document.querySelector('.box.dragging');
+      var dropZone = event.target.closest('.box');
+
+      if (draggingBox && dropZone) {
+        var chartContainer = document.getElementById('chartContainer');
+        var boxes = Array.from(chartContainer.getElementsByClassName('box'));
+        var draggingIndex = boxes.indexOf(draggingBox);
+        var dropIndex = boxes.indexOf(dropZone);
+
+        if (draggingIndex !== dropIndex) {
+          if (draggingIndex < dropIndex) {
+            chartContainer.insertBefore(draggingBox, dropZone.nextSibling);
+          } else {
+            chartContainer.insertBefore(draggingBox, dropZone);
+          }
+        }
+      }
+
+      event.target.classList.remove('drop-zone');
+    }
+
+    function handleDragEnd(event) {
+      event.target.classList.remove('dragging');
+    }
+
+    function getTransportMeta(transport) {
+        var transportMeta = {};
+        if (transport === 'mq') {
+            transportMeta = JSON.parse(mq_meta);
+        } else if (transport === 'jms') {
+            transportMeta = JSON.parse(jms_meta);
+        } else if (transport === 'oracle') {
+            transportMeta = JSON.parse(oracle_meta);
+        }
+        return transportMeta; 
+    }
+
+    function fillTransportDiv(transport,endpoint) {
+        var transportDiv = document.getElementById('transportDiv');
+        transportDiv.innerHTML='';
+        var transportMeta = {};
+        transportMeta = getTransportMeta(transport);
+        var transportHeading = document.createElement('label');
+        transportHeading.textContent = transport + 'EndPoint' + '>>';
+        transportDiv.appendChild(transportHeading);
+        var br2 = document.createElement('br');
+        transportDiv.appendChild(br2);
+
+        for (var j = 0; j < transportMeta.length; j++) {
+            var propertyMeta = transportMeta[j];
+            var propertyName = propertyMeta.name;
+            var propertyClass = propertyMeta.class;
+
+            var label = document.createElement('label');
+            label.textContent = propertyName + ':';
+
+            var br1 = document.createElement('br');
+            label.appendChild(br1);
+            
+            var input = document.createElement('input');
+            input.type = 'text';
+            input.value = endpoint[transport + 'EndPoint'][propertyName] || ''; // Use endpoint transport-specific value if available, otherwise empty string
+
+            label.appendChild(input);
+            var br = document.createElement('br');
+            label.appendChild(br);
+            //modalBody.appendChild(label);
+            transportDiv.appendChild(label);
+        }
+}
+
+    function showModal(endpoint) {
+        modalTitle.textContent = endpoint.endPointName;
+        var endpointProperties = Object.entries(endpoint).filter(function ([key, value]) {
+            return key !== 'endPointName';
+        });
+        modalBody.innerHTML = '';
+
+  var endpointMeta = JSON.parse(endPoint_meta);
+  var transport = endpoint.transport;
+
+
+  for (var i = 0; i < endpointMeta.length; i++) {
+    var propertyMeta = endpointMeta[i];
+    var propertyName = propertyMeta.name;
+    var propertyClass = propertyMeta.class;
+
+    var label = document.createElement('label');
+    label.textContent = propertyName + ':';
+
+    var br1 = document.createElement('br');
+    label.appendChild(br1);
+
+
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.value = endpoint[propertyName] || ''; // Use endpoint value if available, otherwise empty string
+    label.appendChild(input);
+    var br = document.createElement('br');
+    label.appendChild(br);
+    modalBody.appendChild(label);
+  }
+
+  var transportDiv = document.createElement('div');
+  transportDiv.setAttribute('id', 'transportDiv');
+  modalBody.appendChild(transportDiv);
+  fillTransportDiv(transport,endpoint);
+  modal.style.display = 'block';
+}
+
+
+    modalClose.addEventListener('click', function() {
+      modal.style.display = 'none';
+    });
+
+    modalHeader.addEventListener('mousedown', function(event) {
+      event.preventDefault();
+
+      var initialX = event.clientX;
+      var initialY = event.clientY;
+
+      var modalRect = modal.getBoundingClientRect();
+      var offsetX = initialX - modalRect.left;
+      var offsetY = initialY - modalRect.top;
+
+      function handleMouseMove(event) {
+        event.preventDefault();
+
+        var newX = event.clientX;
+        var newY = event.clientY;
+
+        modal.style.left = newX - offsetX + 'px';
+        modal.style.top = newY - offsetY + 'px';
+      }
+
+      function handleMouseUp(event) {
+        event.preventDefault();
+
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      }
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    });
+  </script>
+</body>
+</html>

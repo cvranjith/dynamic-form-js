@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    .box {
+      display: inline-block;
+      width: 150px;
+      height: 150px;
+      background-color: #f2f2f2;
+      margin: 5px;
+      padding: 10px;
+      text-align: center;
+      border-radius: 10px;
+      box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+      cursor: pointer;
+    }
+
+    .box img {
+      width: 80px;
+      height: 80px;
+      margin-bottom: 10px;
+    }
+
+    #chartContainer {
+      text-align: center;
+    }
+
+    #modal {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 400px;
+      background-color: #fff;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+      z-index: 9999;
+      transition: transform 0.3s, opacity 0.3s;
+      top: 20%;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .modal-header {
+      padding: 10px;
+      background-color: #f2f2f2;
+      border-radius: 10px 10px 0 0;
+      cursor: move;
+    }
+
+    .modal-content {
+      padding: 20px;
+    }
+
+    .modal-close {
+      float: right;
+      cursor: pointer;
+    }
+
+    .modal-body label {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      margin-bottom: 10px;
+      width: 100%;
+      text-align: right;
+      padding-right: 10px;
+    }
+
+    .modal-body input[type="text"] {
+      width: 100%;
+      padding: 5px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <div id="chartContainer"></div>
+
+  <div id="modal">
+    <div class="modal-header" id="modalHeader">
+      <span class="modal-close">&#10006;</span>
+    </div>
+    <div class="modal-content">
+      <h2 id="modalTitle"></h2>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+  <script>
+    var endpointData = `transports:
+  endPoints:
+    - endPointName: dbProcEP
+      transport: oracle
+      authCredialName: db_cred
+      oracleEndPoint:
+        statement: begin :output := fn_process(:input,:headers,:outputheaders); end;
+      msgCodeIdentifier:
+        identifier: header
+        identifierTag: msgCode
+    - endPointName: jmsQueue
+      transport: jms
+      jmsEndPoint:
+        queueName: jms/TestJMSQueue1
+    - endPointName: mqPutEP
+      transport: mq
+      mqEndPoint:
+        queueName: queue:///DEV.QUEUE.1
+      authCredialName: ibmmq_cred`;
+
+    var endPoint_meta=`[{"name":"endPointName","class":"java.lang.String","mandatory":true},{"name":"transport","class":"java.lang.String","mandatory":true,"lov":["AQ","FILE","HTTP","JMS","JOB","KAFKA","MQ","ORACLE","SCANDIR","SHELL"]},{"name":"authCredialName","class":"java.lang.String"},{"name":"targetEndPoint","class":"java.lang.String"},{"name":"headers","class":"java.util.List","listClass":"oracle.fsgbu.models.HeaderFormParam"},{"name":"payloadIdentifier","class":"oracle.fsgbu.models.ElementString"},{"name":"msgCodeIdentifier","class":"oracle.fsgbu.models.ElementString"}]`;
+    var mq_meta=`[{"name":"queueName","class":"java.lang.String","mandatory":true}]`;
+    var jms_meta=`[{"name":"queueName","class":"java.lang.String","mandatory":true},{"name":"queueConnectionFactory","class":"java.lang.String","mandatory":true}]`;
+    var jms_meta=`[{"name":"queueName","class":"java.lang.String","mandatory":true},{"name":"queueConnectionFactory","class":"java.lang.String","mandatory":true}]`;
+    var oracle_meta=`[{"name":"statement","class":"java.lang.String","mandatory":true,"defaultValue":"begin my_pkg.my_proc(p_input=>:input, p_in_headers=> :headers, p_output=>:output, p_out_headers=>:outputheaders); end;"}]`;
+    var mq_tag="mqEndPoint";
+    var jms_tag="jmsEndPoint";
+    var oracle_tag="oracleEndPoint";
+    
+    var boxesPerRow = 3;
+
+    function generateChartBoxes(data, boxesPerRow) {
+      var chartContainer = document.getElementById('chartContainer');
+      chartContainer.innerHTML = '';
+
+      var parsedData = jsyaml.load(data);
+      var endpointData = parsedData.transports.endPoints;
+
+      for (var i = 0; i < endpointData.length; i++) {
+        var endpoint = endpointData[i];
+
+        var box = document.createElement('div');
+        box.className = 'box';
+        box.addEventListener('click', function(endpoint) {
+          return function() {
+            showModal(endpoint);
+          };
+        }(endpoint));
+
+        var transportIcon = document.createElement('img');
+        transportIcon.src = endpoint.transport + '.png';
+        box.appendChild(transportIcon);
+
+        var modalEndpointName = document.createElement('div');
+        modalEndpointName.textContent = endpoint.endPointName;
+        box.appendChild(modalEndpointName);
+
+        var modalTransport = document.createElement('div');
+        modalTransport.textContent = endpoint.transport;
+        box.appendChild(modalTransport);
+
+        chartContainer.appendChild(box);
+
+        if ((i + 1) % boxesPerRow === 0) {
+          chartContainer.appendChild(document.createElement('br'));
+        }
+      }
+    }
+
+    generateChartBoxes(endpointData, boxesPerRow);
+
+    var modal = document.getElementById('modal');
+    var modalClose = document.getElementsByClassName('modal-close')[0];
+    var modalHeader = document.getElementById('modalHeader');
+    var modalContent = document.querySelector('.modal-content');
+    var modalTitle = document.getElementById('modalTitle');
+    var modalBody = document.getElementById('modalBody');
+
+    var isMouseDown = false;
+    var initialMouseX = 0;
+    var initialMouseY = 0;
+    var initialModalX = 0;
+    var initialModalY = 0;
+
+    function showModal(endpoint) {
+      modalTitle.innerHTML = 'End Point Details <b>' + endpoint.endPointName + '</b>';
+      modalBody.innerHTML = '';
+
+      for (var key in endpoint) {
+        if (endpoint.hasOwnProperty(key)) {
+          var lineDiv = document.createElement('div');
+
+          var label = document.createElement('label');
+          label.textContent = key + ':';
+          lineDiv.appendChild(label);
+
+          var input = document.createElement('input');
+          input.type = 'text';
+          input.value = endpoint[key];
+          input.addEventListener('input', function(e) {
+            endpoint[e.target.name] = e.target.value;
+          });
+          input.name = key;
+          lineDiv.appendChild(input);
+
+          modalBody.appendChild(lineDiv);
+        }
+      }
+
+      modal.style.transform = 'scale(0)';
+      modal.style.opacity = '0';
+      modal.style.display = 'block';
+
+      setTimeout(function() {
+        modal.style.transform = 'scale(1)';
+        modal.style.opacity = '1';
+      }, 100);
+    }
+
+    function closeModal() {
+      modal.style.transform = 'scale(0)';
+      modal.style.opacity = '0';
+
+      setTimeout(function() {
+        modal.style.display = 'none';
+      }, 300);
+    }
+
+    modalClose.addEventListener('click', closeModal);
+
+    window.addEventListener('click', function(event) {
+      if (event.target === modal) {
+        closeModal();
+      }
+    });
+
+    modalHeader.addEventListener('mousedown', function(event) {
+      if (event.target === modalHeader) {
+        isMouseDown = true;
+        initialMouseX = event.clientX;
+        initialMouseY = event.clientY;
+        initialModalX = modal.offsetLeft;
+        initialModalY = modal.offsetTop;
+      }
+    });
+
+    window.addEventListener('mouseup', function() {
+      isMouseDown = false;
+    });
+
+    window.addEventListener('mousemove', function(event) {
+      if (isMouseDown) {
+        var dx = event.clientX - initialMouseX;
+        var dy = event.clientY - initialMouseY;
+        modal.style.left = initialModalX + dx + 'px';
+        modal.style.top = initialModalY + dy + 'px';
+      }
+    });
+  </script>
+</body>
+</html>
